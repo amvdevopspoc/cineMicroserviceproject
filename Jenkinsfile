@@ -40,7 +40,6 @@ pipeline {
             steps {
                 // Checkout the code for the current branch
                 checkout scm
-                // This previous REMOVED comment is no longer relevant as we are using the tool block below.
             }
         }
 
@@ -71,24 +70,15 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // CRITICAL FIX: The declarative 'tool' directive is failing due to an environment issue 
-            // on the Jenkins agent. We are switching to the scripted 'withNodeJS' block, which is 
-            // more robust at setting the PATH correctly on the agent.
+            // LAST RESORT FIX: Bypassing the broken Jenkins NodeJS plugin entirely.
+            // This assumes the agent running the job has 'npm' and 'node' installed globally 
+            // and accessible via the system PATH. All previous plugin-based methods failed.
             agent any
             steps {
-                echo 'Building React frontend using injected NodeJS environment...'
-                // The 'withNodeJS' wrapper explicitly uses the tool and guarantees the environment 
-                // variables (like PATH) are correctly set for the wrapped steps.
-                withNodeJS(
-                    nodeJSInstallation: 'NodeJS', 
-                    // Add any global npm packages required here, separated by spaces. 
-                    // Use 'packageName@version' to fix a specific version (e.g., 'eslint@8.0.0').
-                    npmPackages: '' 
-                ) {
-                    dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
-                        sh 'npm install'
-                        sh 'npm run build' // Creates the production-ready build directory
-                    }
+                echo 'Building React frontend using system-installed NodeJS/npm...'
+                dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
+                    sh 'npm install'
+                    sh 'npm run build' // Creates the production-ready build directory
                 }
             }
         }
