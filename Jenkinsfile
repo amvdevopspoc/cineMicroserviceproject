@@ -71,12 +71,12 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: REMOVING the 'tool' directive as it seems misconfigured or inaccessible on the 'any' agent.
-            // We now rely on 'node' and 'npm' being available in the agent's PATH.
+            // FIX: Restoring the 'tool' directive with the confirmed name 'NodeJS' since npm is not in the agent's PATH.
             agent any
             steps {
-                echo 'Building React frontend assuming NodeJS is in PATH...'
-                // tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' // REMOVED
+                echo 'Building React frontend using installed NodeJS tool...'
+                // Restoring the tool directive with the name verified in the configuration image
+                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
