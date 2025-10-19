@@ -71,16 +71,24 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Reverting to 'agent any' and restoring the 'tool' directive with the confirmed name 'NodeJS'.
-            // This is the correct, canonical approach for using the Jenkins NodeJS plugin.
+            // CRITICAL FIX: The declarative 'tool' directive is failing due to an environment issue 
+            // on the Jenkins agent. We are switching to the scripted 'withNodeJS' block, which is 
+            // more robust at setting the PATH correctly on the agent.
             agent any
             steps {
-                echo 'Building React frontend using installed NodeJS tool...'
-                // Use the tool directive to inject NodeJS into the PATH
-                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
-                dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
-                    sh 'npm install'
-                    sh 'npm run build' // Creates the production-ready build directory
+                echo 'Building React frontend using injected NodeJS environment...'
+                // The 'withNodeJS' wrapper explicitly uses the tool and guarantees the environment 
+                // variables (like PATH) are correctly set for the wrapped steps.
+                withNodeJS(
+                    nodeJSInstallation: 'NodeJS', 
+                    // Add any global npm packages required here, separated by spaces. 
+                    // Use 'packageName@version' to fix a specific version (e.g., 'eslint@8.0.0').
+                    npmPackages: '' 
+                ) {
+                    dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
+                        sh 'npm install'
+                        sh 'npm run build' // Creates the production-ready build directory
+                    }
                 }
             }
         }
