@@ -71,19 +71,13 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // CRITICAL FIX: The Jenkins 'tool' mechanism is failing despite correct naming.
-            // We are switching this stage to use a 'docker' agent to guarantee a clean environment 
-            // with NodeJS available, bypassing the tool configuration issue entirely.
-            // This stage builds the CineVision React application which uses Redux, Router, and Axios.
-            agent {
-                docker {
-                    image 'node:18-alpine' // A light-weight image with NodeJS 18 and npm
-                    args '-u root:root' // Ensures permissions are adequate for npm install
-                }
-            }
+            // FIX: Reverting to 'agent any' and restoring the 'tool' directive with the confirmed name 'NodeJS'.
+            // This is the correct, canonical approach for using the Jenkins NodeJS plugin.
+            agent any
             steps {
-                echo 'Building React frontend inside node:18-alpine Docker container...'
-                // The 'tool' directive is no longer necessary as it's provided by the Docker image
+                echo 'Building React frontend using installed NodeJS tool...'
+                // Use the tool directive to inject NodeJS into the PATH
+                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
