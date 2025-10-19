@@ -1,17 +1,12 @@
 // Jenkins Declarative Pipeline for CineVision Microservices Project
 // This pipeline handles building all Java microservices, the React frontend,
 // SonarQube analysis, and Docker image creation/push to JFrog Artifactory.
-// Updated: Uses existing 'NodeJS' tool; manual Maven install for compatibility.
-// Assumes NodeJS Plugin installed; Maven downloaded if missing on agent.
 
 pipeline {
-    // Using 'agent any' for flexibility (requires Docker/Git/Java on agent)
+    // TEMPORARY FIX: Switched from 'agent docker' to 'agent any'
+    // We are relying on the 'any' agent having Java/Maven/Git/Docker installed, 
+    // and we will attempt to use the Jenkins tool step for NodeJS one last time.
     agent any
-    
-    // Tools: Use existing NodeJS config (no Maven tool; handle manually)
-    tools {
-        nodejs 'NodeJS'  // Matches Jenkins suggestion; adds npm to PATH
-    }
     
     // Global parameters and configurations
     environment {
@@ -28,15 +23,11 @@ pipeline {
         SONAR_SERVER     = 'MyCloudSonar'    // Name from Jenkins configuration (image_f38447.png)
         SONAR_PROJECTKEY = 'cinevision-app'  // Project Key used in SonarQube UI (image_fe04ca.png)
         SONAR_ORGANIZATION = 'amvdevopspoc'  // Organization Key (image_fe04ca.png)
-        
-        // Maven path (set after install)
-        MAVEN_HOME = '/opt/maven'
     }
     
     // Only execute the pipeline when pushed to the 'dev' branch
     options {
         skipDefaultCheckout() // Will be done manually in the SCM stage
-        buildDiscarder(logRotator(numToKeepStr: '10')) // Keep last 10 builds
     }
 
     stages {
@@ -55,24 +46,9 @@ pipeline {
         }
 
         stage('Backend Build & Test') {
+            // WARN: This stage still requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Building all Java microservices with Maven...'
-                // Manual Maven setup (idempotent; only if not present)
-                sh '''
-                    if ! command -v mvn &> /dev/null; then
-                        echo "Maven not found; installing..."
-                        wget -q https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz
-                        tar xzvf apache-maven-3.9.6-bin.tar.gz
-                        sudo mkdir -p /opt/maven || true
-                        sudo mv apache-maven-3.9.6/* /opt/maven/ || true
-                        sudo chown -R $(whoami) /opt/maven || true
-                        export PATH=${MAVEN_HOME}/bin:$PATH
-                        echo "Maven version: $(mvn --version)"
-                    else
-                        echo "Maven already available: $(mvn --version)"
-                        export PATH=${MAVEN_HOME}/bin:$PATH  # Ensure path if custom install
-                    fi
-                '''
                 // Clean and compile all Java services
                 sh 'mvn clean install -DskipTests'
                 
@@ -85,34 +61,37 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
+            // WARN: This stage still requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Running SonarQube analysis on all backend modules...'
                 withSonarQubeEnv(env.SONAR_SERVER) {
-                    // Ensure Maven PATH (from previous stage or repeat)
-                    sh '''
-                        export PATH=${MAVEN_HOME}/bin:$PATH
-                        # Use sonar:sonar goal to avoid re-running tests (executes from root for multi-module)
-                        mvn sonar:sonar -Dsonar.projectKey=${SONAR_PROJECTKEY} -Dsonar.organization=${SONAR_ORGANIZATION}
-                    '''
+                    // Execute SonarQube analysis from the root directory to analyze all modules
+                    sh "mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=${env.SONAR_PROJECTKEY} -Dsonar.organization=${env.SONAR_ORGANIZATION}"
                 }
             }
         }
 
         stage('Frontend Build') {
+            // FIX: Reverting to the tool step to properly load NodeJS into the environment PATH.
+            // The tool name 'NodeJS' MUST match the configuration you set up in Manage Jenkins > Global Tool Configuration.
             steps {
-                echo 'Building React frontend with npm...'
-                // NodeJS tool adds to PATH; assumes package.json in 'frontend' dir
-                sh '''
-                    cd frontend  # Adjust if your React app is in root or elsewhere
-                    npm install
-                    npm run build  # Production build (outputs to /build)
-                '''
-                // Archive frontend artifacts
-                archiveArtifacts artifacts: 'frontend/build/**', allowEmptyArchive: true
+                echo 'Building React frontend using installed NodeJS tool (NodeJS)...'
+                script {
+                    // Tool name is confirmed to be 'NodeJS' from images
+                    def nodeJsHome = tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
+                    withEnv(["PATH+NODEJS=${nodeJsHome}/bin"]) {
+                        dir('frontend') {
+                            sh 'npm install'
+                            sh 'npm run build'
+                        }
+                    }
+                }
             }
         }
         
         stage('Docker Build & Push') {
+            // WARN: This stage requires the Docker daemon and client to be available on the 'any' agent,
+            // which previously failed due to permissions. This will likely fail until the agent permissions are fixed.
             steps {
                 script {
                     def services = [
@@ -120,56 +99,36 @@ pipeline {
                         'api-gateway', 
                         'movie-service', 
                         'user-service', 
-                        'frontend' // CineVision React App (built previously; serve static files)
+                        'frontend' // CineVision React App (built previously)
                     ]
                     
                     // Get the short Git commit hash for the image tag
                     def gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-                    def tagName = "${env.BRANCH_NAME}-${gitCommit}"  // e.g., dev-abc123 for better tracking
+                    def tagName = "latest-${gitCommit}"
                     
-                    // Use withDockerRegistry for secure login
+                    // Use a common function to handle Docker login and push
+                    // The DOCKER_CREDS_ID is used here to securely inject the JFrog token/password
                     withDockerRegistry(credentialsId: env.DOCKER_CREDS_ID, url: "https://${env.DOCKER_REPO_HOST}") {
                         for (int i = 0; i < services.size(); i++) {
                             def serviceName = services[i]
                             // Full repository path including the host and the virtual repo key
                             def imagePath = "${env.DOCKER_REPO_HOST}/${env.ARTY_REPO_KEY}/${serviceName}"
-                            def fullImageTag = "${imagePath}:${tagName}"
                             
-                            echo "--- Building and Pushing: ${fullImageTag} ---"
+                            echo "--- Building and Pushing: ${imagePath}:${tagName} ---"
                             
-                            // Build the image from service directory (assumes Dockerfile exists)
-                            def dockerImage = docker.build(fullImageTag, "-f ${serviceName}/Dockerfile ${serviceName}")
+                            // Build the image. Context must be the service directory.
+                            // This will also fail if Docker socket permissions are not fixed on the agent.
+                            def dockerImage = docker.build("${imagePath}:${tagName}", "-f ${serviceName}/Dockerfile ${serviceName}")
                             
                             // Push the specific tag
                             dockerImage.push()
                             
-                            // Push as 'latest' for dev branch
-                            if (env.BRANCH_NAME == 'dev') {
-                                dockerImage.push('latest')
-                            }
-                            
-                            // Cleanup local image to save space
-                            dockerImage.inside { sh 'rm -rf /tmp/*' }  // Optional: Clean inside if needed
+                            // Also push as 'latest'
+                            dockerImage.push('latest')
                         }
                     }
                 }
             }
-        }
-    }
-    
-    post {
-        always {
-            // Clean workspace to save disk space
-            cleanWs()
-            // Optional: Remove manual Maven install if in /opt
-            sh 'sudo rm -rf /opt/maven || true'
-        }
-        success {
-            echo 'Pipeline completed successfully! Images pushed to Artifactory.'
-        }
-        failure {
-            echo 'Pipeline failed. Check logs for details.'
-            // Optional: Add emailext body: 'Build failed: ${BUILD_URL}', to: 'team@example.com'
         }
     }
 }
