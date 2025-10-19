@@ -70,15 +70,26 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // LAST RESORT FIX: Bypassing the broken Jenkins NodeJS plugin entirely.
-            // This assumes the agent running the job has 'npm' and 'node' installed globally 
-            // and accessible via the system PATH. All previous plugin-based methods failed.
+            // FINAL ROBUST FIX: All previous plugin-based and system-path methods failed.
+            // We are using a temporary 'node:18-alpine' Docker container for the build.
+            // This is the most reliable way to execute a Node build when the agent environment is broken.
             agent any
             steps {
-                echo 'Building React frontend using system-installed NodeJS/npm...'
-                dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
-                    sh 'npm install'
-                    sh 'npm run build' // Creates the production-ready build directory
+                echo 'Building React frontend inside a temporary Docker container...'
+                
+                // Use the docker.image().inside() block to execute commands within a clean Node environment
+                script {
+                    docker.image('node:18-alpine').inside('-u root') {
+                        // Move into the frontend directory
+                        dir('frontend') {
+                            // Install dependencies
+                            sh 'npm install'
+                            // Run the build command
+                            sh 'npm run build'
+                            // The build artifacts (e.g., the 'build' directory) remain in the workspace 
+                            // of the Jenkins agent after the container exits, ready for the Docker stage.
+                        }
+                    }
                 }
             }
         }
