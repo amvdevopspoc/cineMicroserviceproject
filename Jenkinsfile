@@ -72,15 +72,12 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Run the build inside a dedicated Node.js Docker container for reliability
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    args '-u root'
-                }
-            }
+            // FIX: Reverting from 'agent docker' to 'tool nodejs' due to 'permission denied' error on the Docker socket.
+            // This relies on the NodeJS tool installation named "NodeJS" (image_f3932a.png).
+            agent any
             steps {
-                echo 'Building React frontend inside node:18-alpine container...'
+                echo 'Building React frontend using installed NodeJS tool...'
+                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
