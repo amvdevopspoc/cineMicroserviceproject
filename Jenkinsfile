@@ -71,11 +71,11 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Correcting tool name to 'NodeJS 18' to match the likely configured name in Global Tool Configuration.
+            // FIX: Reverting tool name to 'NodeJS' based on confirmation from image_f31441.png / image_f3932a.png.
             agent any
             steps {
                 echo 'Building React frontend using installed NodeJS tool...'
-                tool name: 'NodeJS 18', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' // Name changed from 'NodeJS' to 'NodeJS 18'
+                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' // Name corrected to 'NodeJS'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
