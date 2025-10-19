@@ -40,8 +40,7 @@ pipeline {
             steps {
                 // Checkout the code for the current branch
                 checkout scm
-                // REMOVED: tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' 
-                // We will now use a Docker image for the Frontend Build stage instead.
+                // This previous REMOVED comment is no longer relevant as we are using the tool block below.
             }
         }
 
@@ -72,12 +71,11 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Reverting from 'agent docker' to 'tool nodejs' due to 'permission denied' error on the Docker socket.
-            // This relies on the NodeJS tool installation named "NodeJS" (image_f3932a.png).
+            // FIX: Correcting tool name to 'NodeJS 18' to match the likely configured name in Global Tool Configuration.
             agent any
             steps {
                 echo 'Building React frontend using installed NodeJS tool...'
-                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
+                tool name: 'NodeJS 18', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' // Name changed from 'NodeJS' to 'NodeJS 18'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
