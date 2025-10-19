@@ -1,0 +1,28 @@
+# --- STAGE 1: Build the Application ---
+# Use the official Maven image with Java 17 for the build environment
+FROM maven:3.8.7-openjdk-17-slim AS build
+WORKDIR /app
+
+# Copy the entire project source code (the Jenkins pipeline ensures 'mvn install' was run)
+COPY . .
+
+# Package the service JAR. We use -pl to only package this specific module 
+# and -am to include its dependencies. Replace 'movie-service' with the 
+# actual module name if different from the directory name.
+RUN mvn clean package -DskipTests -pl movie-service -am
+
+# --- STAGE 2: Create the Final Runtime Image ---
+# Use a lightweight JRE image for production for security and small size
+FROM openjdk:17-jre-slim
+WORKDIR /app
+
+# Expose the port the Spring Boot app will run on (e.g., 8081, 8082, 8761)
+EXPOSE 8081 
+
+# Copy the JAR file from the build stage. 
+# NOTE: The path assumes the resulting JAR is inside the 'movie-service/target' folder 
+# relative to the multi-module project root. Adjust if your build path is different.
+COPY --from=build /app/movie-service/target/*.jar app.jar
+
+# Define the entrypoint to run the Spring Boot application
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -1,0 +1,121 @@
+// Jenkins Declarative Pipeline for CineVision Microservices Project
+// This pipeline handles building all Java microservices, the React frontend,
+// SonarQube analysis, and Docker image creation/push to JFrog Artifactory.
+
+pipeline {
+    // Restrict execution to the 'dev' branch
+    agent {
+        docker {
+            image 'maven:3.8.7-openjdk-17-slim' // Use a multi-tool image for building Java components
+            args '-u root' // Often necessary for file permissions inside the container
+        }
+    }
+    
+    // Global parameters and configurations
+    environment {
+        // --- JFROG ARTIFactory Settings ---
+        DOCKER_REPO_HOST = 'jfrog-repo.yourcompany.com' // Replace with your Artifactory hostname
+        ARTY_REPO_KEY    = 'docker-virtual'              // Virtual repository key created in Artifactory
+        DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS'          // Jenkins Credential ID for Docker login (Username/Password)
+        
+        // --- SONARQUBE Settings ---
+        SONAR_SERVER     = 'YOUR_SONAR_SERVER_NAME'      // Name of SonarQube Server configured in Manage Jenkins -> Configure System
+        SONAR_PROJECTKEY = 'cinevision-app'              // Project Key used in SonarQube UI
+        SONAR_ORGANIZATION = 'amvdevopspoc'             // Organization Key if using SonarQube Cloud
+    }
+    
+    // Only execute the pipeline when pushed to the 'dev' branch
+    options {
+        skipDefaultCheckout() // Will be done manually in the SCM stage
+    }
+
+    stages {
+        stage('Restrict Branch') {
+            when { branch 'dev' }
+            steps {
+                echo "Pipeline is running on the restricted branch: ${env.BRANCH_NAME}"
+            }
+        }
+        
+        stage('SCM Checkout') {
+            steps {
+                // Checkout the code for the current branch
+                checkout scm
+                // Install Node.js/npm for frontend build
+                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' 
+            }
+        }
+
+        stage('Backend Build & Test') {
+            steps {
+                echo 'Building all Java microservices with Maven...'
+                // Clean and compile all Java services
+                sh 'mvn clean install -DskipTests'
+                
+                // Run unit tests
+                sh 'mvn test'
+                
+                // Archive test results
+                junit '**/target/surefire-reports/TEST-*.xml'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                echo 'Running SonarQube analysis on all backend modules...'
+                withSonarQubeEnv(env.SONAR_SERVER) {
+                    // Execute SonarQube analysis from the root directory to analyze all modules
+                    sh "mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=${env.SONAR_PROJECTKEY} -Dsonar.organization=${env.SONAR_ORGANIZATION}"
+                }
+            }
+        }
+
+        stage('Frontend Build') {
+            steps {
+                echo 'Building React frontend...'
+                dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
+                    sh 'npm install'
+                    sh 'npm run build' // Creates the production-ready build directory
+                }
+            }
+        }
+        
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    def services = [
+                        'eureka-server', 
+                        'api-gateway', 
+                        'movie-service', 
+                        'user-service', 
+                        'frontend' // React app packaged, likely using Nginx/Alpine Dockerfile
+                    ]
+                    
+                    // Get the short Git commit hash for the image tag
+                    def gitCommit = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+                    def tagName = "latest-${gitCommit}"
+                    
+                    // Use a common function to handle Docker login and push
+                    withDockerRegistry(credentialsId: env.DOCKER_CREDS_ID, url: "https://${env.DOCKER_REPO_HOST}") {
+                        for (int i = 0; i < services.size(); i++) {
+                            def serviceName = services[i]
+                            def imagePath = "${env.DOCKER_REPO_HOST}/${env.ARTY_REPO_KEY}/${serviceName}"
+                            
+                            echo "--- Building and Pushing: ${imagePath}:${tagName} ---"
+                            
+                            // Build the image, using the serviceName as the directory context
+                            // The -f flag points to the Dockerfile within the service directory
+                            def dockerImage = docker.build("${imagePath}:${tagName}", "-f ${serviceName}/Dockerfile ${serviceName}")
+                            
+                            // Push the specific tag
+                            dockerImage.push()
+                            
+                            // Also push as 'latest' for easy deployment updates (optional, but common)
+                            dockerImage.push('latest')
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
