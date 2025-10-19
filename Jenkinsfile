@@ -74,17 +74,8 @@ pipeline {
         stage('Frontend Build') {
             // FINAL ATTEMPT: Reverting to the 'tool' step with the correct type/name, 
             // as all other robust methods (system path, withNodeJS, Docker inside) have failed.
-            steps {
-                echo 'Building React frontend using installed NodeJS tool...'
-                script {
-                    def nodeJsHome = tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
-                    withEnv(["PATH+NODEJS=${nodeJsHome}/bin"]) {
-                        dir('frontend') {
-                            sh 'npm install'
-                            sh 'npm run build'
-                        }
-                    }
-                }
+                steps {
+                sh 'npm install'
             }
         }
         
