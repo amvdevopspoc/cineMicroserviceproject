@@ -38,14 +38,13 @@ pipeline {
             steps {
                 // Checkout the code for the current branch
                 checkout scm
-                // Install Node.js/npm for frontend build
-                // NOTE: This tool step requires the NodeJS plugin to be installed AND configured.
-                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' 
+                // REMOVED: tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' 
+                // We will now use a Docker image for the Frontend Build stage instead.
             }
         }
 
         stage('Backend Build & Test') {
-            // WARN: This stage now requires 'mvn' to be available on the 'any' agent.
+            // WARN: This stage still requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Building all Java microservices with Maven...'
                 // Clean and compile all Java services
@@ -60,7 +59,7 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            // WARN: This stage now requires 'mvn' to be available on the 'any' agent.
+            // WARN: This stage still requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Running SonarQube analysis on all backend modules...'
                 withSonarQubeEnv(env.SONAR_SERVER) {
@@ -71,9 +70,15 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // WARN: This stage now requires 'npm' to be available on the 'any' agent.
+            // FIX: Run the build inside a dedicated Node.js Docker container for reliability
+            agent {
+                docker {
+                    image 'node:18-alpine'
+                    args '-u root'
+                }
+            }
             steps {
-                echo 'Building React frontend...'
+                echo 'Building React frontend inside node:18-alpine container...'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
@@ -82,7 +87,7 @@ pipeline {
         }
         
         stage('Docker Build & Push') {
-            // WARN: This stage now requires the Docker daemon and client to be available on the 'any' agent.
+            // WARN: This stage still requires the Docker daemon and client to be available on the 'any' agent.
             steps {
                 script {
                     def services = [
