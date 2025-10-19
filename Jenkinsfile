@@ -74,6 +74,7 @@ pipeline {
             // CRITICAL FIX: The Jenkins 'tool' mechanism is failing despite correct naming.
             // We are switching this stage to use a 'docker' agent to guarantee a clean environment 
             // with NodeJS available, bypassing the tool configuration issue entirely.
+            // This stage builds the CineVision React application which uses Redux, Router, and Axios.
             agent {
                 docker {
                     image 'node:18-alpine' // A light-weight image with NodeJS 18 and npm
@@ -99,7 +100,7 @@ pipeline {
                         'api-gateway', 
                         'movie-service', 
                         'user-service', 
-                        'frontend' // React app packaged, likely using Nginx/Alpine Dockerfile
+                        'frontend' // CineVision React App (built previously)
                     ]
                     
                     // Get the short Git commit hash for the image tag
@@ -114,8 +115,9 @@ pipeline {
                             
                             echo "--- Building and Pushing: ${imagePath}:${tagName} ---"
                             
-                            // Build the image, using the serviceName as the directory context
-                            // The -f flag points to the Dockerfile within the service directory
+                            // Build the image. For the 'frontend', this step uses the 'frontend/Dockerfile' 
+                            // which should handle packaging the built React assets (from the previous stage) 
+                            // into a production web server image (e.g., Nginx).
                             def dockerImage = docker.build("${imagePath}:${tagName}", "-f ${serviceName}/Dockerfile ${serviceName}")
                             
                             // Push the specific tag
