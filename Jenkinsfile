@@ -3,13 +3,10 @@
 // SonarQube analysis, and Docker image creation/push to JFrog Artifactory.
 
 pipeline {
-    // Restrict execution to the 'dev' branch
-    agent {
-        docker {
-            image 'maven:3.8.7-openjdk-17-slim' // Use a multi-tool image for building Java components
-            args '-u root' // Often necessary for file permissions inside the container
-        }
-    }
+    // TEMPORARY FIX: Switched from 'agent docker' to 'agent any'
+    // You MUST install the 'Pipeline: Declarative Agent Docker' plugin and restart Jenkins 
+    // to use the original 'agent docker' configuration.
+    agent any
     
     // Global parameters and configurations
     environment {
@@ -42,11 +39,13 @@ pipeline {
                 // Checkout the code for the current branch
                 checkout scm
                 // Install Node.js/npm for frontend build
+                // NOTE: This tool step requires the NodeJS plugin to be installed AND configured.
                 tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation' 
             }
         }
 
         stage('Backend Build & Test') {
+            // WARN: This stage now requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Building all Java microservices with Maven...'
                 // Clean and compile all Java services
@@ -61,6 +60,7 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
+            // WARN: This stage now requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Running SonarQube analysis on all backend modules...'
                 withSonarQubeEnv(env.SONAR_SERVER) {
@@ -71,6 +71,7 @@ pipeline {
         }
 
         stage('Frontend Build') {
+            // WARN: This stage now requires 'npm' to be available on the 'any' agent.
             steps {
                 echo 'Building React frontend...'
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
@@ -81,6 +82,7 @@ pipeline {
         }
         
         stage('Docker Build & Push') {
+            // WARN: This stage now requires the Docker daemon and client to be available on the 'any' agent.
             steps {
                 script {
                     def services = [
