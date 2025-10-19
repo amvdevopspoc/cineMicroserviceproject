@@ -75,16 +75,17 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Using the declarative 'withNodeJS' wrapper, which is the official way 
-            // to run Node builds when the plugin is installed. The parameter 'NodeJS' must 
-            // exactly match the tool configuration name.
+            // FIX: Using Docker container for build since the NodeJS plugin (withNodeJS) is missing.
+            // This requires the Docker daemon to be accessible by the Jenkins user on the agent.
             steps {
-                echo 'Building React frontend using the withNodeJS wrapper...'
-                // Assuming the name 'NodeJS' is correct from the configuration screenshots.
-                withNodeJS(nodeJSInstallationName: 'NodeJS') {
-                    dir('frontend') {
-                        sh 'npm install'
-                        sh 'npm run build'
+                echo 'Building React frontend inside a temporary Docker container...'
+                script {
+                    // Pull and run the build inside node:18-alpine
+                    docker.image('node:18-alpine').inside {
+                        dir('frontend') {
+                            sh 'npm install'
+                            sh 'npm run build'
+                        }
                     }
                 }
             }
