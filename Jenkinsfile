@@ -3,28 +3,21 @@
 // SonarQube analysis, and Docker image creation/push to JFrog Artifactory.
 
 pipeline {
-    // TEMPORARY FIX: Switched from 'agent docker' to 'agent any'
-    // We are relying on the 'any' agent having Java/Maven/Git/Docker installed, 
-    // and we will attempt to use the Jenkins tool step for NodeJS one last time.
+    // Relying on the 'any' agent having Java/Maven/Git/Docker installed
     agent any
     
     // Global parameters and configurations
     environment {
         // --- JFROG ARTIFactory Settings ---
-        // Based on the login URL from image_ff65e5.png (akhil15.jfrog.io)
-        DOCKER_REPO_HOST = 'akhil15.jfrog.io' // Replace with your Artifactory hostname (if different)
-        ARTY_REPO_KEY    = 'docker-virtual'  // Virtual repository key confirmed from image_fe6a5f.png
+        DOCKER_REPO_HOST = 'akhil15.jfrog.io' 
+        ARTY_REPO_KEY    = 'docker-virtual'  
         
-        // Credential ID for Docker login (Username/Password or Token)
-        // This ID MUST match the Jenkins credential record storing 'vakhil.kumar@sas.ken.com' and the associated Identity Token (image_fe6246.png)
+        // Credential ID for Docker login
         DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS' 
         
         // --- SONARQUBE Settings ---
-        // Name from Jenkins configuration (image_f38447.png)
         SONAR_SERVER     = 'MyCloudSonar'    
-        // Project Key used in SonarQube UI (image_fe04ca.png)
         SONAR_PROJECTKEY = 'cinevision-app'  
-        // Organization Key (image_fe04ca.png)
         SONAR_ORGANIZATION = 'amvdevopspoc'  
     }
     
@@ -49,7 +42,6 @@ pipeline {
         }
 
         stage('Backend Build & Test') {
-            // WARN: This stage still requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Building all Java microservices with Maven...'
                 // Clean and compile all Java services
@@ -64,7 +56,6 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            // WARN: This stage still requires 'mvn' to be available on the 'any' agent.
             steps {
                 echo 'Running SonarQube analysis on all backend modules...'
                 withSonarQubeEnv(env.SONAR_SERVER) {
@@ -76,13 +67,13 @@ pipeline {
 
         stage('Frontend Build') {
             // FIX: Using Docker container for build since the NodeJS plugin (withNodeJS) is missing.
-            // This requires the Docker daemon to be accessible by the Jenkins user on the agent.
             steps {
                 echo 'Building React frontend inside a temporary Docker container...'
                 script {
-                    // Pull and run the build inside node:18-alpine
                     docker.image('node:18-alpine').inside {
                         dir('frontend') {
+                            // NEW FIX: Force clean the cache before installing to resolve TAR_ENTRY_ERROR (package corruption).
+                            sh 'npm cache clean --force' 
                             sh 'npm install'
                             sh 'npm run build'
                         }
@@ -92,8 +83,7 @@ pipeline {
         }
         
         stage('Docker Build & Push') {
-            // WARN: This stage requires the Docker daemon and client to be available on the 'any' agent,
-            // which previously failed due to permissions. This will likely fail until the agent permissions are fixed.
+            // This stage is now the final hurdle for the Docker permissions/setup.
             steps {
                 script {
                     def services = [
@@ -109,7 +99,6 @@ pipeline {
                     def tagName = "latest-${gitCommit}"
                     
                     // Use a common function to handle Docker login and push
-                    // The DOCKER_CREDS_ID is used here to securely inject the JFrog token/password
                     withDockerRegistry(credentialsId: env.DOCKER_CREDS_ID, url: "https://${env.DOCKER_REPO_HOST}") {
                         for (int i = 0; i < services.size(); i++) {
                             def serviceName = services[i]
@@ -119,7 +108,6 @@ pipeline {
                             echo "--- Building and Pushing: ${imagePath}:${tagName} ---"
                             
                             // Build the image. Context must be the service directory.
-                            // This will also fail if Docker socket permissions are not fixed on the agent.
                             def dockerImage = docker.build("${imagePath}:${tagName}", "-f ${serviceName}/Dockerfile ${serviceName}")
                             
                             // Push the specific tag
