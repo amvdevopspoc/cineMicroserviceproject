@@ -18,7 +18,7 @@ pipeline {
         DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS'          // Jenkins Credential ID for Docker login (Username/Password)
         
         // --- SONARQUBE Settings ---
-        SONAR_SERVER     = 'MyCloudSonar'                  // FIXED: Now correctly matches the name from the Jenkins configuration (image_f38447.png)
+        SONAR_SERVER      = 'MyCloudSonar'                  // FIXED: Now correctly matches the name from the Jenkins configuration (image_f38447.png)
         SONAR_PROJECTKEY = 'cinevision-app'              // Project Key used in SonarQube UI
         SONAR_ORGANIZATION = 'amvdevopspoc'             // Organization Key if using SonarQube Cloud
     }
@@ -71,12 +71,18 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Restoring the 'tool' directive with the confirmed name 'NodeJS' since npm is not in the agent's PATH.
-            agent any
+            // CRITICAL FIX: The Jenkins 'tool' mechanism is failing despite correct naming.
+            // We are switching this stage to use a 'docker' agent to guarantee a clean environment 
+            // with NodeJS available, bypassing the tool configuration issue entirely.
+            agent {
+                docker {
+                    image 'node:18-alpine' // A light-weight image with NodeJS 18 and npm
+                    args '-u root:root' // Ensures permissions are adequate for npm install
+                }
+            }
             steps {
-                echo 'Building React frontend using installed NodeJS tool...'
-                // Restoring the tool directive with the name verified in the configuration image
-                tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
+                echo 'Building React frontend inside node:18-alpine Docker container...'
+                // The 'tool' directive is no longer necessary as it's provided by the Docker image
                 dir('frontend') { // Assumes frontend code is in a 'frontend' sub-directory
                     sh 'npm install'
                     sh 'npm run build' // Creates the production-ready build directory
