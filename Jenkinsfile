@@ -4,23 +4,25 @@
 
 pipeline {
     // TEMPORARY FIX: Switched from 'agent docker' to 'agent any'
-    // You MUST install the 'Pipeline: Declarative Agent Docker' plugin and restart Jenkins 
-    // to use the original 'agent docker' configuration.
+    // The Frontend Build stage uses a robust Docker container 'inside' block to bypass
+    // the broken Jenkins NodeJS plugin and system PATH issues on the agent.
     agent any
     
     // Global parameters and configurations
     environment {
         // --- JFROG ARTIFactory Settings ---
-        DOCKER_REPO_HOST = 'jfrog-repo.yourcompany.com' // Replace with your Artifactory hostname
-        ARTY_REPO_KEY    = 'docker-virtual'              // Virtual repository key created in Artifactory
-        // Based on the JFrog login, the username is likely the email, 
-        // so the token/password should be stored as the credential ID below.
-        DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS'          // Jenkins Credential ID for Docker login (Username/Password)
+        // Based on the login URL from image_ff65e5.png (akhil15.jfrog.io)
+        DOCKER_REPO_HOST = 'akhil15.jfrog.io' // Replace with your Artifactory hostname (if different)
+        ARTY_REPO_KEY    = 'docker-virtual'  // Virtual repository key confirmed from image_fe6a5f.png
+        
+        // Credential ID for Docker login (Username/Password or Token)
+        // This ID MUST match the Jenkins credential record storing 'vakhil.kumar@sas.ken.com' and the associated Identity Token (image_fe6246.png)
+        DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS' 
         
         // --- SONARQUBE Settings ---
-        SONAR_SERVER      = 'MyCloudSonar'                  // FIXED: Now correctly matches the name from the Jenkins configuration (image_f38447.png)
-        SONAR_PROJECTKEY = 'cinevision-app'              // Project Key used in SonarQube UI
-        SONAR_ORGANIZATION = 'amvdevopspoc'             // Organization Key if using SonarQube Cloud
+        SONAR_SERVER     = 'MyCloudSonar'    // Name from Jenkins configuration (image_f38447.png)
+        SONAR_PROJECTKEY = 'cinevision-app'  // Project Key used in SonarQube UI (image_fe04ca.png)
+        SONAR_ORGANIZATION = 'amvdevopspoc'  // Organization Key (image_fe04ca.png)
     }
     
     // Only execute the pipeline when pushed to the 'dev' branch
@@ -70,9 +72,7 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FINAL ROBUST FIX: All previous plugin-based and system-path methods failed.
-            // We are using a temporary 'node:18-alpine' Docker container for the build.
-            // This is the most reliable way to execute a Node build when the agent environment is broken.
+            // FINAL ROBUST FIX: Using docker.image().inside() to execute the Node build reliably.
             agent any
             steps {
                 echo 'Building React frontend inside a temporary Docker container...'
@@ -86,8 +86,7 @@ pipeline {
                             sh 'npm install'
                             // Run the build command
                             sh 'npm run build'
-                            // The build artifacts (e.g., the 'build' directory) remain in the workspace 
-                            // of the Jenkins agent after the container exits, ready for the Docker stage.
+                            // The build artifacts remain in the workspace, ready for the Docker stage.
                         }
                     }
                 }
@@ -111,22 +110,22 @@ pipeline {
                     def tagName = "latest-${gitCommit}"
                     
                     // Use a common function to handle Docker login and push
+                    // The DOCKER_CREDS_ID is used here to securely inject the JFrog token/password
                     withDockerRegistry(credentialsId: env.DOCKER_CREDS_ID, url: "https://${env.DOCKER_REPO_HOST}") {
                         for (int i = 0; i < services.size(); i++) {
                             def serviceName = services[i]
+                            // Full repository path including the host and the virtual repo key
                             def imagePath = "${env.DOCKER_REPO_HOST}/${env.ARTY_REPO_KEY}/${serviceName}"
                             
                             echo "--- Building and Pushing: ${imagePath}:${tagName} ---"
                             
-                            // Build the image. For the 'frontend', this step uses the 'frontend/Dockerfile' 
-                            // which should handle packaging the built React assets (from the previous stage) 
-                            // into a production web server image (e.g., Nginx).
+                            // Build the image. Context must be the service directory.
                             def dockerImage = docker.build("${imagePath}:${tagName}", "-f ${serviceName}/Dockerfile ${serviceName}")
                             
                             // Push the specific tag
                             dockerImage.push()
                             
-                            // Also push as 'latest' for easy deployment updates (optional, but common)
+                            // Also push as 'latest'
                             dockerImage.push('latest')
                         }
                     }
