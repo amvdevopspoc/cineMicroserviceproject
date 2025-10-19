@@ -20,9 +20,12 @@ pipeline {
         DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS' 
         
         // --- SONARQUBE Settings ---
-        SONAR_SERVER     = 'MyCloudSonar'    // Name from Jenkins configuration (image_f38447.png)
-        SONAR_PROJECTKEY = 'cinevision-app'  // Project Key used in SonarQube UI (image_fe04ca.png)
-        SONAR_ORGANIZATION = 'amvdevopspoc'  // Organization Key (image_fe04ca.png)
+        // Name from Jenkins configuration (image_f38447.png)
+        SONAR_SERVER     = 'MyCloudSonar'    
+        // Project Key used in SonarQube UI (image_fe04ca.png)
+        SONAR_PROJECTKEY = 'cinevision-app'  
+        // Organization Key (image_fe04ca.png)
+        SONAR_ORGANIZATION = 'amvdevopspoc'  
     }
     
     // Only execute the pipeline when pushed to the 'dev' branch
@@ -72,18 +75,16 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FIX: Reverting to the tool step to properly load NodeJS into the environment PATH.
-            // The tool name 'NodeJS' MUST match the configuration you set up in Manage Jenkins > Global Tool Configuration.
+            // FIX: Using the declarative 'withNodeJS' wrapper, which is the official way 
+            // to run Node builds when the plugin is installed. The parameter 'NodeJS' must 
+            // exactly match the tool configuration name.
             steps {
-                echo 'Building React frontend using installed NodeJS tool (NodeJS)...'
-                script {
-                    // Tool name is confirmed to be 'NodeJS' from images
-                    def nodeJsHome = tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
-                    withEnv(["PATH+NODEJS=${nodeJsHome}/bin"]) {
-                        dir('frontend') {
-                            sh 'npm install'
-                            sh 'npm run build'
-                        }
+                echo 'Building React frontend using the withNodeJS wrapper...'
+                // Assuming the name 'NodeJS' is correct from the configuration screenshots.
+                withNodeJS(nodeJSInstallationName: 'NodeJS') {
+                    dir('frontend') {
+                        sh 'npm install'
+                        sh 'npm run build'
                     }
                 }
             }
