@@ -13,10 +13,12 @@ pipeline {
         // --- JFROG ARTIFactory Settings ---
         DOCKER_REPO_HOST = 'jfrog-repo.yourcompany.com' // Replace with your Artifactory hostname
         ARTY_REPO_KEY    = 'docker-virtual'              // Virtual repository key created in Artifactory
+        // Based on the JFrog login, the username is likely the email, 
+        // so the token/password should be stored as the credential ID below.
         DOCKER_CREDS_ID  = 'JFROG_DOCKER_CREDS'          // Jenkins Credential ID for Docker login (Username/Password)
         
         // --- SONARQUBE Settings ---
-        SONAR_SERVER     = 'YOUR_SONAR_SERVER_NAME'      // Name of SonarQube Server configured in Manage Jenkins -> Configure System
+        SONAR_SERVER     = 'MyCloudSonar'                  // FIXED: Now correctly matches the name from the Jenkins configuration (image_f38447.png)
         SONAR_PROJECTKEY = 'cinevision-app'              // Project Key used in SonarQube UI
         SONAR_ORGANIZATION = 'amvdevopspoc'             // Organization Key if using SonarQube Cloud
     }
