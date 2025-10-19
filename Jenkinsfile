@@ -4,8 +4,8 @@
 
 pipeline {
     // TEMPORARY FIX: Switched from 'agent docker' to 'agent any'
-    // The Frontend Build stage uses a robust Docker container 'inside' block to bypass
-    // the broken Jenkins NodeJS plugin and system PATH issues on the agent.
+    // We are relying on the 'any' agent having Java/Maven/Git/Docker installed, 
+    // and we will attempt to use the Jenkins tool step for NodeJS one last time.
     agent any
     
     // Global parameters and configurations
@@ -72,21 +72,16 @@ pipeline {
         }
 
         stage('Frontend Build') {
-            // FINAL ROBUST FIX: Using docker.image().inside() to execute the Node build reliably.
-            agent any
+            // FINAL ATTEMPT: Reverting to the 'tool' step with the correct type/name, 
+            // as all other robust methods (system path, withNodeJS, Docker inside) have failed.
             steps {
-                echo 'Building React frontend inside a temporary Docker container...'
-                
-                // Use the docker.image().inside() block to execute commands within a clean Node environment
+                echo 'Building React frontend using installed NodeJS tool...'
                 script {
-                    docker.image('node:18-alpine').inside('-u root') {
-                        // Move into the frontend directory
+                    def nodeJsHome = tool name: 'NodeJS', type: 'hudson.plugins.nodejs.tools.NodeJsInstallation'
+                    withEnv(["PATH+NODEJS=${nodeJsHome}/bin"]) {
                         dir('frontend') {
-                            // Install dependencies
                             sh 'npm install'
-                            // Run the build command
                             sh 'npm run build'
-                            // The build artifacts remain in the workspace, ready for the Docker stage.
                         }
                     }
                 }
@@ -94,7 +89,8 @@ pipeline {
         }
         
         stage('Docker Build & Push') {
-            // WARN: This stage still requires the Docker daemon and client to be available on the 'any' agent.
+            // WARN: This stage requires the Docker daemon and client to be available on the 'any' agent,
+            // which failed in the previous stage. This will likely fail until the agent permissions are fixed.
             steps {
                 script {
                     def services = [
@@ -120,6 +116,7 @@ pipeline {
                             echo "--- Building and Pushing: ${imagePath}:${tagName} ---"
                             
                             // Build the image. Context must be the service directory.
+                            // This will also fail if Docker socket permissions are not fixed on the agent.
                             def dockerImage = docker.build("${imagePath}:${tagName}", "-f ${serviceName}/Dockerfile ${serviceName}")
                             
                             // Push the specific tag
