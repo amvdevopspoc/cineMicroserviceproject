@@ -41,6 +41,29 @@ pipeline {
             }
         }
 
+        // ----------------------------------------------------------------
+        // MOVED STAGE: Frontend Build is now before Backend Build & Test
+        // ----------------------------------------------------------------
+        stage('Frontend Build') {
+            // Using Docker container for build since the NodeJS plugin (withNodeJS) is missing.
+            steps {
+                echo 'Building React frontend inside a temporary Docker container...'
+                script {
+                    docker.image('node:18-alpine').inside {
+                        dir('frontend') {
+                            // FIX: Force clean the cache and address the EACCES error by using a local cache dir.
+                            // The path is relative to the dir('frontend') block's current working directory.
+                            sh 'npm cache clean --force' 
+                            // Using --cache to avoid the "EACCES: permission denied, mkdir '/.npm'" error
+                            sh 'npm install --cache ./.npm-cache' 
+                            sh 'npm run build'
+                        }
+                    }
+                }
+            }
+        }
+        // ----------------------------------------------------------------
+        
         stage('Backend Build & Test') {
             steps {
                 echo 'Building all Java microservices with Maven...'
@@ -65,25 +88,7 @@ pipeline {
             }
         }
 
-        stage('Frontend Build') {
-            // FIX: Using Docker container for build since the NodeJS plugin (withNodeJS) is missing.
-            steps {
-                echo 'Building React frontend inside a temporary Docker container...'
-                script {
-                    docker.image('node:18-alpine').inside {
-                        dir('frontend') {
-                            // NEW FIX: Force clean the cache before installing to resolve TAR_ENTRY_ERROR (package corruption).
-                            sh 'npm cache clean --force' 
-                            sh 'npm install'
-                            sh 'npm run build'
-                        }
-                    }
-                }
-            }
-        }
-        
         stage('Docker Build & Push') {
-            // This stage is now the final hurdle for the Docker permissions/setup.
             steps {
                 script {
                     def services = [
